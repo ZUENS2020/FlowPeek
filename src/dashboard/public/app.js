@@ -43,18 +43,26 @@ function irisClass(state) {
   return "iris";
 }
 
+function cardFlags(run) {
+  const bits = [];
+  if (run.label) bits.push(`<span class="badge">${esc(run.label)}</span>`);
+  if (run.adapterId) bits.push(`<span class="badge">${esc(run.adapterId)}</span>`);
+  return bits.length ? `<div class="flags">${bits.join("")}</div>` : "";
+}
+
+function cwdSpan(cwd) {
+  const path = esc(cwd);
+  return `<span class="cwd" title="${path}">${path}</span>`;
+}
+
 function card(run) {
   const live = run.processState === "running";
   return `<a class="card${live ? " is-live" : ""}" href="/r/${run.id}">
     <span class="${irisClass(run.processState)}" aria-hidden="true"></span>
     <div class="card-main">
-      <div class="flags">
-        <span class="badge ${run.processState}">${run.processState}</span>
-        ${run.label ? `<span class="badge">${esc(run.label)}</span>` : ""}
-        ${run.adapterId ? `<span class="badge">${esc(run.adapterId)}</span>` : ""}
-      </div>
+      ${cardFlags(run)}
       <div class="cmd">${esc(fmtCmd(run))}</div>
-      <div class="meta"><span>${esc(run.cwd)}</span><span>${elapsed(run)}</span>
+      <div class="meta">${cwdSpan(run.cwd)}<span>${elapsed(run)}</span>
         ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
         ${run.droppedRawChunks ? `<span class="warn">dropped ${run.droppedRawChunks}</span>` : ""}</div>
     </div>
@@ -132,10 +140,8 @@ async function renderDetail(id) {
         <h1 class="cmd">${esc(run.label || fmtCmd(run))}</h1>
         ${run.label ? `<div class="cmd-inline">${esc(fmtCmd(run))}</div>` : ""}
         <div class="meta">
-          <span class="badge ${run.processState}" id="state-badge">${run.processState}</span>
-          <span>${esc(run.cwd)}</span>
-          <span>adapter ${esc(run.adapterId || "generic")}</span>
-          ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
+          ${cwdSpan(run.cwd)}
+          ${run.exitCode != null ? `<span id="exit-meta">exit ${run.exitCode}</span>` : ""}
         </div>
       </div>
     </header>
@@ -207,15 +213,17 @@ async function renderDetail(id) {
     });
   }
 
-  function markExited() {
+  function markExited(code) {
     const iris = document.getElementById("run-iris");
     if (iris) iris.className = "iris";
-    const badge = document.getElementById("state-badge");
-    if (badge) {
-      badge.textContent = "exited";
-      badge.className = "badge exited";
-    }
     document.getElementById("term-wrap")?.classList.remove("is-live");
+    const meta = document.querySelector(".run-titles .meta");
+    if (meta && code != null && !document.getElementById("exit-meta")) {
+      const span = document.createElement("span");
+      span.id = "exit-meta";
+      span.textContent = `exit ${code}`;
+      meta.appendChild(span);
+    }
   }
 
   function applyEvent(d) {
@@ -251,7 +259,7 @@ async function renderDetail(id) {
         break;
       case "exit":
         phaseEl.textContent = "exited";
-        markExited();
+        markExited(d.exitCode);
         addNote("", `process exited ${d.exitCode ?? ""} ${d.signal || ""}`.trim());
         break;
       default:

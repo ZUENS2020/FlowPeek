@@ -1,3 +1,52 @@
+@font-face {
+  font-family: "Syne";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/syne-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/atkinson-hyperlegible-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/atkinson-hyperlegible-400-italic.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/atkinson-hyperlegible-700.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Azeret Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/azeret-mono-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Azeret Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/azeret-mono-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
   --gallery: #e9eef3;
   --panel: #f7f9fb;
@@ -152,6 +201,7 @@ h1 {
   }
 }
 
+.lane, .grid { min-width: 0; }
 .grid { display: grid; gap: var(--space-2); }
 
 .card {
@@ -164,6 +214,7 @@ h1 {
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
   color: inherit;
+  min-width: 0;
   min-height: 44px;
 }
 .card:hover {
@@ -196,6 +247,17 @@ h1 {
   display: flex;
   gap: 0.35rem 0.85rem;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 0%;
+  max-width: 100%;
 }
 
 .badge {
@@ -209,15 +271,6 @@ h1 {
   border: 1px solid var(--line);
   color: var(--quiet);
   background: transparent;
-}
-.badge.running {
-  color: var(--iris);
-  border-color: color-mix(in srgb, var(--iris) 50%, var(--line));
-}
-.badge.exited { color: var(--quiet); }
-.badge.unknown {
-  color: var(--lost);
-  border-color: color-mix(in srgb, var(--lost) 50%, var(--line));
 }
 
 .iris {
@@ -291,6 +344,7 @@ h1 {
   gap: 0.85rem;
   align-items: flex-start;
   margin-bottom: var(--space-4);
+  min-width: 0;
 }
 .run-head .iris {
   --s: 14px;
