@@ -198,11 +198,23 @@ describe("dashboard HTTP", () => {
       expect(page.status).toBe(200);
       const html = await page.text();
       expect(html).toMatch(/FlowPeek/);
+      expect(html).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/);
       const css = await fetch(`http://127.0.0.1:${port}/styles.css`).then((r) => r.text());
       expect(css).toMatch(/--iris:/);
       expect(css).toMatch(/prefers-reduced-motion/);
+      expect(css).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/);
+      expect(css).toMatch(/@font-face/);
+      expect(css).toMatch(/font-family:\s*"Syne"/);
+      expect(css).toMatch(/font-family:\s*"Atkinson Hyperlegible"/);
+      expect(css).toMatch(/font-family:\s*"Azeret Mono"/);
       const js = await fetch(`http://127.0.0.1:${port}/app.js`).then((r) => r.text());
+      expect(js).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/);
       expect(js).not.toMatch(/\b(Stop|Restart|Kill)\b/);
+      expect(js).not.toMatch(/badge \$\{run\.processState\}/);
+      expect(js).not.toMatch(/id="state-badge"/);
+      const font = await fetch(`http://127.0.0.1:${port}/fonts/syne-700.woff2`);
+      expect(font.status).toBe(200);
+      expect(font.headers.get("content-type")).toMatch(/woff2/);
     } finally {
       daemon.kill("SIGTERM");
     }
