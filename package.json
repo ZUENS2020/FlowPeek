@@ -1,0 +1,51 @@
+{
+  "name": "flowpeek",
+  "version": "0.1.0",
+  "description": "Transparent, AI-programmable observability layer for long-running coding-agent CLI processes.",
+  "type": "module",
+  "bin": {
+    "flowpeek": "./dist/cli.js",
+    "agent-view": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "skill",
+    "examples",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "prepare": "npm run build",
+    "dev": "tsx src/cli.ts",
+    "daemon": "node dist/cli.js daemon --foreground",
+    "start": "node dist/cli.js daemon --foreground",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "flowpeek",
+    "observability",
+    "pty",
+    "cli",
+    "dashboard"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "quickjs-emscripten": "^0.31.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
