@@ -198,6 +198,11 @@ describe("dashboard HTTP", () => {
       expect(page.status).toBe(200);
       const html = await page.text();
       expect(html).toMatch(/FlowPeek/);
+      const css = await fetch(`http://127.0.0.1:${port}/styles.css`).then((r) => r.text());
+      expect(css).toMatch(/--iris:/);
+      expect(css).toMatch(/prefers-reduced-motion/);
+      const js = await fetch(`http://127.0.0.1:${port}/app.js`).then((r) => r.text());
+      expect(js).not.toMatch(/\b(Stop|Restart|Kill)\b/);
     } finally {
       daemon.kill("SIGTERM");
     }

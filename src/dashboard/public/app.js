@@ -18,10 +18,10 @@ async function fetchJson(url) {
 async function ping() {
   try {
     const h = await fetchJson("/api/health");
-    healthEl.textContent = `daemon up ${h.uptime}s`;
+    healthEl.textContent = `up ${h.uptime}s`;
     healthEl.classList.add("ok");
   } catch {
-    healthEl.textContent = "daemon unreachable";
+    healthEl.textContent = "collector unreachable";
     healthEl.classList.remove("ok");
   }
 }
@@ -37,15 +37,27 @@ function elapsed(run) {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+function irisClass(state) {
+  if (state === "running") return "iris live";
+  if (state === "unknown") return "iris lost";
+  return "iris";
+}
+
 function card(run) {
-  return `<a class="card" href="/r/${run.id}">
-    <div><span class="badge ${run.processState}">${run.processState}</span>
-      ${run.label ? `<span class="badge">${esc(run.label)}</span>` : ""}
-      ${run.adapterId ? `<span class="badge">${esc(run.adapterId)}</span>` : ""}</div>
-    <div class="cmd">${esc(fmtCmd(run))}</div>
-    <div class="meta"><span>${esc(run.cwd)}</span><span>${elapsed(run)}</span>
-      ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
-      ${run.droppedRawChunks ? `<span>dropped ${run.droppedRawChunks}</span>` : ""}</div>
+  const live = run.processState === "running";
+  return `<a class="card${live ? " is-live" : ""}" href="/r/${run.id}">
+    <span class="${irisClass(run.processState)}" aria-hidden="true"></span>
+    <div class="card-main">
+      <div class="flags">
+        <span class="badge ${run.processState}">${run.processState}</span>
+        ${run.label ? `<span class="badge">${esc(run.label)}</span>` : ""}
+        ${run.adapterId ? `<span class="badge">${esc(run.adapterId)}</span>` : ""}
+      </div>
+      <div class="cmd">${esc(fmtCmd(run))}</div>
+      <div class="meta"><span>${esc(run.cwd)}</span><span>${elapsed(run)}</span>
+        ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
+        ${run.droppedRawChunks ? `<span class="warn">dropped ${run.droppedRawChunks}</span>` : ""}</div>
+    </div>
   </a>`;
 }
 
@@ -61,28 +73,31 @@ async function renderHome() {
   try {
     data = await fetchJson("/api/runs");
   } catch {
-    app.innerHTML = `<div class="empty">Cannot reach the local collector. Start it with <code>flowpeek daemon</code>.</div>`;
+    app.innerHTML = `<div class="empty invite">
+      <h1>Collector unreachable</h1>
+      <p>This dashboard talks to the local daemon on this port. Start it with <code>flowpeek daemon</code>.</p>
+    </div>`;
     return;
   }
   const runs = data.runs || [];
   const running = runs.filter((r) => r.processState === "running");
   const rest = runs.filter((r) => r.processState !== "running");
   if (!runs.length) {
-    app.innerHTML = `<div class="empty">
-      <h1>No runs yet</h1>
-      <p>Wrap a long command. FlowPeek does not start or stop the process — it only observes.</p>
+    app.innerHTML = `<div class="empty invite">
+      <h1>Nothing to watch</h1>
+      <p>Wrap a long command. FlowPeek only observes — it never starts or stops the process.</p>
       <p><code>flowpeek run -- npm run build</code></p>
     </div>`;
     return;
   }
-  app.innerHTML = `<div class="lists">
-    <section>
-      <h1>Running</h1>
-      <div class="grid">${running.length ? running.map(card).join("") : `<div class="empty">Nothing running.</div>`}</div>
+  app.innerHTML = `<div class="scan">
+    <section class="lane">
+      <div class="lane-head"><h1>Live</h1><span class="count">${running.length}</span></div>
+      <div class="grid">${running.length ? running.map(card).join("") : `<div class="empty">Quiet. No live commands.</div>`}</div>
     </section>
-    <section>
-      <h1>Completed</h1>
-      <div class="grid">${rest.length ? rest.map(card).join("") : `<div class="empty">No finished runs.</div>`}</div>
+    <section class="lane">
+      <div class="lane-head"><h1>Recent</h1><span class="count">${rest.length}</span></div>
+      <div class="grid">${rest.length ? rest.map(card).join("") : `<div class="empty">No recent runs.</div>`}</div>
     </section>
   </div>`;
 }
@@ -100,34 +115,43 @@ async function renderDetail(id) {
   try {
     payload = await fetchJson(`/api/runs/${id}`);
   } catch {
-    app.innerHTML = `<div class="empty">Run not found.</div>`;
+    app.innerHTML = `<div class="empty invite">
+      <h1>Run not found</h1>
+      <p>It may have been pruned, or the id is wrong.</p>
+    </div>`;
     return;
   }
   const run = payload.run;
   const latest = payload.latest || {};
   app.innerHTML = `
-    <p><a href="/">← All runs</a></p>
-    <h1 class="cmd">${esc(run.label || fmtCmd(run))}</h1>
-    <div class="meta">
-      <span class="badge ${run.processState}">${run.processState}</span>
-      <span>${esc(fmtCmd(run))}</span>
-      <span>${esc(run.cwd)}</span>
-      <span>adapter ${esc(run.adapterId || "generic")}</span>
-      ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
-    </div>
+    <a class="skip" href="#term">Skip to live output</a>
+    <p class="crumb"><a href="/">Runs</a></p>
+    <header class="run-head">
+      <span class="${irisClass(run.processState)}" id="run-iris" aria-hidden="true"></span>
+      <div class="run-titles">
+        <h1 class="cmd">${esc(run.label || fmtCmd(run))}</h1>
+        ${run.label ? `<div class="cmd-inline">${esc(fmtCmd(run))}</div>` : ""}
+        <div class="meta">
+          <span class="badge ${run.processState}" id="state-badge">${run.processState}</span>
+          <span>${esc(run.cwd)}</span>
+          <span>adapter ${esc(run.adapterId || "generic")}</span>
+          ${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}
+        </div>
+      </div>
+    </header>
     <div id="banners"></div>
-    <div class="kpis">
-      <div class="kpi"><b>phase</b><span id="phase">${esc(latest.phase || "—")}</span></div>
-      <div class="kpi"><b>elapsed</b><span id="elapsed">${elapsed(run)}</span></div>
-      <div class="kpi"><b>adapter</b><span>${esc(run.adapterId || "generic")}</span></div>
-      <div class="kpi"><b>dropped</b><span id="dropped">${run.droppedRawChunks || 0}</span></div>
+    <div class="status-strip">
+      <div class="stat"><b>phase</b><span id="phase">${esc(latest.phase || "—")}</span></div>
+      <div class="stat"><b>elapsed</b><span id="elapsed">${elapsed(run)}</span></div>
+      <div class="stat"><b>adapter</b><span>${esc(run.adapterId || "generic")}</span></div>
+      <div class="stat"><b>dropped</b><span id="dropped">${run.droppedRawChunks || 0}</span></div>
     </div>
     <div id="pbar"></div>
-    <ul class="notes" id="notes"></ul>
-    <div class="term-wrap">
-      <div class="term-head"><span>Live terminal (rolling buffer)</span><span id="termmeta">raw stream</span></div>
-      <pre id="term"></pre>
+    <div class="term-wrap${run.processState === "running" ? " is-live" : ""}" id="term-wrap">
+      <div class="term-head"><span>Live output</span><span id="termmeta">raw stream</span></div>
+      <pre id="term" tabindex="0"></pre>
     </div>
+    <ul class="notes" id="notes"></ul>
   `;
   const term = new TermBuf();
   const pre = document.getElementById("term");
@@ -144,10 +168,10 @@ async function renderDetail(id) {
   function bannersFrom(r) {
     const bits = [];
     if (r.droppedRawChunks) {
-      bits.push(`<div class="banner warn">Telemetry dropped ${r.droppedRawChunks} raw chunks under backpressure. The real command was not stalled.</div>`);
+      bits.push(`<div class="banner warn">Dropped ${r.droppedRawChunks} raw chunks under backpressure. The command was not stalled.</div>`);
     }
     if (!r.telemetryConnected && r.processState !== "exited") {
-      bits.push(`<div class="banner lost">Telemetry connection lost. Process state is unknown — this does not mean the command failed.</div>`);
+      bits.push(`<div class="banner lost">Telemetry lost. Process state is unknown — the command may still be running.</div>`);
     }
     banners.innerHTML = bits.join("");
   }
@@ -183,6 +207,17 @@ async function renderDetail(id) {
     });
   }
 
+  function markExited() {
+    const iris = document.getElementById("run-iris");
+    if (iris) iris.className = "iris";
+    const badge = document.getElementById("state-badge");
+    if (badge) {
+      badge.textContent = "exited";
+      badge.className = "badge exited";
+    }
+    document.getElementById("term-wrap")?.classList.remove("is-live");
+  }
+
   function applyEvent(d) {
     if (!d) return;
     if (typeof d.seq === "number") {
@@ -216,6 +251,7 @@ async function renderDetail(id) {
         break;
       case "exit":
         phaseEl.textContent = "exited";
+        markExited();
         addNote("", `process exited ${d.exitCode ?? ""} ${d.signal || ""}`.trim());
         break;
       default:
@@ -256,6 +292,7 @@ window.addEventListener("popstate", route);
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a");
   if (a && a.origin === location.origin && a.pathname.startsWith("/")) {
+    if (a.hash && a.pathname === location.pathname) return;
     e.preventDefault();
     history.pushState({}, "", a.pathname);
     route();
