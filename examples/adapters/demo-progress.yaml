@@ -1,0 +1,17 @@
+id: demo-progress
+name: Demo progress printer
+match:
+  executable: node
+  argsRegex: "demo-progress"
+patterns:
+  - regex: "progress ([0-9]+)/([0-9]+)"
+    kind: progress
+    current: "{1}"
+    total: "{2}"
+    message: "{1}/{2}"
+warnings:
+  - regex: "warning: (.+)"
+    message: "{1}"
+errors:
+  - regex: "error: (.+)"
+    message: "{1}"

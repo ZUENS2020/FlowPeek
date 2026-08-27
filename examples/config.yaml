@@ -1,0 +1,19 @@
+# FlowPeek local config (copy to ~/.flowpeek/config.yaml or .flowpeek/config.yaml)
+
+dashboard:
+  host: 127.0.0.1
+  port: 47831
+  auto_start: true
+terminal:
+  mode: auto
+agent_output:
+  mode: passthrough
+  heartbeat_seconds: 10
+adapters:
+  allow_project: true
+  allow_user: true
+  allow_agent_generated: true
+storage:
+  retain_days: 7
+  max_total_mb: 2048
+  max_run_mb: 256

@@ -1,0 +1,4 @@
+   Compiling serde v1.0.210
+warning: unused variable: `x`
+   Compiling foo v0.1.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.23s
