@@ -201,6 +201,7 @@ h1 {
   }
 }
 
+.lane, .grid { min-width: 0; }
 .grid { display: grid; gap: var(--space-2); }
 
 .card {
@@ -213,6 +214,7 @@ h1 {
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
   color: inherit;
+  min-width: 0;
   min-height: 44px;
 }
 .card:hover {
@@ -254,7 +256,7 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  flex: 1 1 8rem;
+  flex: 1 1 0%;
   max-width: 100%;
 }
 
@@ -342,6 +344,7 @@ h1 {
   gap: 0.85rem;
   align-items: flex-start;
   margin-bottom: var(--space-4);
+  min-width: 0;
 }
 .run-head .iris {
   --s: 14px;

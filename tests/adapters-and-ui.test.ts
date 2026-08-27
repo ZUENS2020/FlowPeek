@@ -207,6 +207,8 @@ describe("dashboard HTTP", () => {
       expect(css).toMatch(/font-family:\s*"Syne"/);
       expect(css).toMatch(/font-family:\s*"Atkinson Hyperlegible"/);
       expect(css).toMatch(/font-family:\s*"Azeret Mono"/);
+      expect(css).toMatch(/\.cwd\b/);
+      expect(css).toMatch(/text-overflow:\s*ellipsis/);
       const js = await fetch(`http://127.0.0.1:${port}/app.js`).then((r) => r.text());
       expect(js).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/);
       expect(js).not.toMatch(/\b(Stop|Restart|Kill)\b/);
