@@ -102,8 +102,7 @@ export class RunRegistry extends EventEmitter {
   ingestRaw(id: string, b64: string, byteLength: number, seqHint?: number): void {
     const live = this.live.get(id);
     if (!live) return;
-    live.lastSeen = Date.now();
-    live.run.telemetryConnected = true;
+    this.markTelemetryRestored(id);
     live.seq = Math.max(live.seq + 1, seqHint || 0);
     const ev: RunEvent = {
       runId: id,
@@ -169,8 +168,7 @@ export class RunRegistry extends EventEmitter {
   heartbeat(id: string, dropped: number): void {
     const live = this.live.get(id);
     if (!live) return;
-    live.lastSeen = Date.now();
-    live.run.telemetryConnected = true;
+    this.markTelemetryRestored(id);
     live.run.droppedRawChunks = dropped;
     this.broadcast(live, {
       runId: id,
@@ -225,6 +223,28 @@ export class RunRegistry extends EventEmitter {
       message: "telemetry connection lost (process state unknown; not marked failed)",
     });
     this.emit("update", live.run);
+  }
+
+  /**
+   * Wrapper reconnected (hello / heartbeat / raw). Restore running state when
+   * the process has not already exited — disconnect is not a process failure.
+   */
+  markTelemetryRestored(id: string): void {
+    const live = this.live.get(id);
+    if (!live) return;
+    live.lastSeen = Date.now();
+    const exited = live.run.processState === "exited" || live.run.status === "exited";
+    const wasLost = !live.run.telemetryConnected || live.run.processState === "unknown";
+    live.run.telemetryConnected = true;
+    if (!exited) {
+      live.run.processState = "running";
+      live.run.status = "running";
+      live.run.telemetryDisconnectedAt = undefined;
+    }
+    if (wasLost && !exited) {
+      upsertRun(live.run);
+      this.emit("update", live.run);
+    }
   }
 
   subscribe(id: string, cb: (ev: RunEvent) => void): () => void {

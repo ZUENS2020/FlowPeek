@@ -40,7 +40,7 @@ export class AdapterSession {
       try {
         await this.sandbox.init(spec.script, emit);
         if (this.sandbox.disabled) this.disable(this.sandbox.disableReason);
-        else this.sandbox.call("onStart", {});
+        else this.sandbox.call("onStart");
       } catch (err) {
         this.disable(err instanceof Error ? err.message : String(err));
       }
@@ -113,7 +113,7 @@ export class AdapterSession {
     genericOnExit(code, signal, emit);
     if (!this.disabled && this.sandbox?.hooks.onExit) {
       try {
-        this.sandbox.call("onExit", code);
+        this.sandbox.call("onExit", code, signal);
       } catch (err) {
         this.disable(err instanceof Error ? err.message : String(err));
       }

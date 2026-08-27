@@ -10,13 +10,15 @@ export const FORWARDED_SIGNALS = [
 
 export type ForwardSignal = (typeof FORWARDED_SIGNALS)[number];
 
+export type IoStream = "stdout" | "stderr";
+
 export interface SpawnHandle {
   pid: number;
   pgid?: number;
   pty: boolean;
   write(data: string | Buffer): void;
   resize?(cols: number, rows: number): void;
-  onData(cb: (chunk: string) => void): void;
+  onData(cb: (chunk: string, stream: IoStream) => void): void;
   onExit(cb: (code: number | null, signal: string | null) => void): void;
   kill(signal?: NodeJS.Signals): void;
   pause?(): void;

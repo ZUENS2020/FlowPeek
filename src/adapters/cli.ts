@@ -188,23 +188,7 @@ export function cmdAdapterScaffold(id: string, kind: "yaml" | "script", project:
   if (kind === "script") {
     writeFileSync(
       path,
-      `// flowpeek-match: executable=${id}
-function match(command) {
-  return command.executable === ${JSON.stringify(id)};
-}
-function onStart(api) {
-  api.phase("running");
-}
-function onLine(api, line) {
-  var m = /progress\\s+(\\d+)\\/(\\d+)/.exec(line);
-  if (m) api.progress({ kind: "determinate", current: Number(m[1]), total: Number(m[2]) });
-  if (/error/i.test(line)) api.error(line);
-  if (/warning/i.test(line)) api.warning(line);
-}
-function onExit(api, code) {
-  api.complete("exit " + code);
-}
-`,
+      scriptAdapterSource(id),
     );
   } else {
     writeFileSync(
@@ -234,4 +218,26 @@ errors:
 
 export function parseMaybeYaml(text: string): unknown {
   return parseYaml(text);
+}
+
+/** Scaffold body for script adapters. `api` is a QuickJS global, not a hook argument. */
+export function scriptAdapterSource(id: string): string {
+  return `// flowpeek-match: executable=${id}
+// api is injected as a global: phase, progress, activity, metric, warning, error, event, complete, heartbeat
+function match(command) {
+  return command.executable === ${JSON.stringify(id)};
+}
+function onStart() {
+  api.phase("running");
+}
+function onLine(line) {
+  var m = /progress\\s+(\\d+)\\/(\\d+)/.exec(line);
+  if (m) api.progress({ kind: "determinate", current: Number(m[1]), total: Number(m[2]) });
+  if (/error/i.test(line)) api.error(line);
+  if (/warning/i.test(line)) api.warning(line);
+}
+function onExit(code) {
+  api.complete("exit " + code);
+}
+`;
 }

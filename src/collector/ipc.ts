@@ -86,6 +86,7 @@ function handleLine(
       case "hello":
         state.runId = msg.run.id;
         if (!registry.live.has(msg.run.id)) registry.startRun(msg.run, msg.run.cwd || project);
+        else registry.markTelemetryRestored(msg.run.id);
         break;
       case "raw":
         state.runId = msg.id;

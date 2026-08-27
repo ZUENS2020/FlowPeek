@@ -4,9 +4,59 @@ import { ensureHome, runUrl } from "../paths.js";
 import type { RunOptions, RunRecord } from "../types.js";
 import { CompactPrinter } from "./compact.js";
 import { ensureDaemon } from "./ensure-daemon.js";
-import { installSignalForwarders, unixExitCode } from "./signals.js";
+import { installSignalForwarders, unixExitCode, type IoStream } from "./signals.js";
 import { spawnCommand } from "./spawn.js";
 import { TelemetryClient } from "./telemetry.js";
+
+function forwardStdinToPty(handle: { pty: boolean; write(data: string | Buffer): void }): () => void {
+  if (!handle.pty) return () => undefined;
+  const stdin = process.stdin;
+  if (!stdin || stdin.destroyed || stdin.readableEnded) return () => undefined;
+
+  let rawSet = false;
+  if (stdin.isTTY) {
+    try {
+      stdin.setRawMode(true);
+      rawSet = true;
+    } catch {
+      /* ignore — not all TTYs support raw mode */
+    }
+  }
+  const onData = (chunk: string | Buffer) => {
+    try {
+      handle.write(chunk);
+    } catch {
+      /* fail open */
+    }
+  };
+  const onError = () => {
+    /* ignore stdin errors; never affect the child */
+  };
+  stdin.on("data", onData);
+  stdin.on("error", onError);
+  if (stdin.isPaused()) stdin.resume();
+
+  return () => {
+    stdin.off("data", onData);
+    stdin.off("error", onError);
+    if (rawSet) {
+      try {
+        stdin.setRawMode(false);
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      stdin.pause();
+    } catch {
+      /* ignore */
+    }
+  };
+}
+
+function passthroughDest(stream: IoStream): NodeJS.WriteStream {
+  return stream === "stderr" ? process.stderr : process.stdout;
+}
 
 export async function runWrapped(opts: RunOptions): Promise<number> {
   if (!opts.command.length) {
@@ -104,7 +154,7 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
   hb.unref?.();
 
   const passthrough = opts.agentOutput === "passthrough";
-  handle.onData((chunk) => {
+  handle.onData((chunk, stream) => {
     // Telemetry is strictly side-channel: enqueue, never await.
     try {
       tel.sendRaw(chunk);
@@ -117,14 +167,16 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
       /* fail open */
     }
     if (passthrough) {
-      const ok = process.stdout.write(chunk);
+      const dest = passthroughDest(stream);
+      const ok = dest.write(chunk);
       if (!ok) {
         handle.pause?.();
-        process.stdout.once("drain", () => handle.resume?.());
+        dest.once("drain", () => handle.resume?.());
       }
     }
   });
 
+  const uninstallStdin = forwardStdinToPty(handle);
   const uninstall = installSignalForwarders(handle, {
     onWinch: () => {
       if (handle.resize && process.stdout.columns && process.stdout.rows) {
@@ -140,6 +192,7 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
       settled = true;
       clearInterval(hb);
       uninstall();
+      uninstallStdin();
       const exitCode = unixExitCode(code, signal);
       try {
         compact.complete(code, signal);

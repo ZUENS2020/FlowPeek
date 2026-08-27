@@ -29,6 +29,12 @@ export interface ScriptHooks {
 /**
  * Isolated QuickJS runtime for user/project script adapters.
  * No Node builtins, no filesystem, no network, no child_process.
+ *
+ * `api` is injected as a global. Hooks are called with data arguments only:
+ *   onStart()
+ *   onChunk(chunk)
+ *   onLine(line)
+ *   onExit(code, signal)
  */
 export class ScriptSandbox {
   private runtime: QuickJSRuntime | null = null;
@@ -46,9 +52,8 @@ export class ScriptSandbox {
     this.ctx = this.runtime.newContext();
     this.injectApi(emit);
     this.startMs = Date.now();
-    this.runtime.setInterruptHandler(() => false);
-    const result = this.ctx.evalCode(script);
     this.runtime.setInterruptHandler(() => Date.now() - this.startMs > MAX_CPU_MS);
+    const result = this.ctx.evalCode(script);
     if (result.error) {
       const msg = this.dump(result.error);
       result.error.dispose();

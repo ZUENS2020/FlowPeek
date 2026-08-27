@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { PtyMode } from "../types.js";
-import type { SpawnHandle } from "./signals.js";
+import type { IoStream, SpawnHandle } from "./signals.js";
 import { killProcessGroup } from "./signals.js";
 
 export interface SpawnSpec {
@@ -59,10 +59,10 @@ function spawnPty(pty: typeof import("node-pty"), spec: SpawnSpec): SpawnHandle 
     cwd: spec.cwd,
     env: spec.env as Record<string, string>,
   });
-  const dataCbs: Array<(c: string) => void> = [];
+  const dataCbs: Array<(c: string, stream: IoStream) => void> = [];
   const exitCbs: Array<(code: number | null, signal: string | null) => void> = [];
   proc.onData((d) => {
-    for (const cb of dataCbs) cb(d);
+    for (const cb of dataCbs) cb(d, "stdout");
   });
   proc.onExit(({ exitCode, signal }) => {
     const sig = signal ? String(signal) : null;
@@ -120,16 +120,16 @@ function spawnPipes(spec: SpawnSpec): SpawnHandle {
   if (!child.pid) {
     throw new Error(`Failed to spawn ${file}`);
   }
-  const dataCbs: Array<(c: string) => void> = [];
+  const dataCbs: Array<(c: string, stream: IoStream) => void> = [];
   const exitCbs: Array<(code: number | null, signal: string | null) => void> = [];
-  const onChunk = (buf: Buffer) => {
-    const s = buf.toString("utf8");
-    for (const cb of dataCbs) cb(s);
+  const emit = (stream: IoStream, buf: Buffer | string) => {
+    const s = typeof buf === "string" ? buf : buf.toString("utf8");
+    for (const cb of dataCbs) cb(s, stream);
   };
-  child.stdout?.on("data", onChunk);
-  child.stderr?.on("data", onChunk);
+  child.stdout?.on("data", (buf: Buffer) => emit("stdout", buf));
+  child.stderr?.on("data", (buf: Buffer) => emit("stderr", buf));
   child.on("error", (err) => {
-    for (const cb of dataCbs) cb(`\n[flowpeek] spawn error: ${err.message}\n`);
+    emit("stderr", `\n[flowpeek] spawn error: ${err.message}\n`);
     for (const cb of exitCbs) cb(1, null);
   });
   child.on("exit", (code, signal) => {
