@@ -26,6 +26,17 @@ Useful flags:
 - `--pty auto` (default). Use `--no-pty` only if the tool misbehaves under a PTY.
 - `--json-meta` when you need the run id as JSON on stderr.
 - `--project <path>` when the project root is not `cwd`.
+- `--session <id>` or `FLOWPEEK_SESSION_ID` to correlate concurrently active commands from one coding task.
+- `--agent <name>` or `FLOWPEEK_AGENT_NAME` to label that session.
+
+At the start of a coding task with several long commands, create one correlation id:
+
+```bash
+export FLOWPEEK_SESSION_ID=$(flowpeek session-id)
+export FLOWPEEK_AGENT_NAME=Codex
+```
+
+This is metadata only. It does not create or manage a task.
 
 On start, stderr prints:
 
@@ -59,14 +70,18 @@ flowpeek adapter resolve -- <command>
 ```
 
 - If a specific adapter matches, use it (`--adapter <id>` or just `auto`).
-- If none match, **generic is enough**. It shows status, elapsed, last activity, output rate, warning/error heuristics, heartbeat. Do not invent a percentage.
-- Only write a project/user adapter when the format is stable and you will reuse it. Keep it small. Validate:
+- If none match, **generic is usually enough**. It shows status, elapsed, last activity, output rate, warning/error heuristics, heartbeat. Do not invent a percentage.
+- Only write a project/user adapter when the format is stable, the command is safe to sample, and you will reuse it. Never probe a command with unacceptable side effects: probe really runs and then stops the command.
+- For a reusable unknown command, use the complete learning loop:
 
 ```bash
+flowpeek probe --max-seconds 15 --max-bytes 2mb --max-lines 10000 -- my-tool build
 flowpeek adapter scaffold my-tool --kind yaml
 flowpeek adapter validate .flowpeek/adapters/my-tool.yaml
-flowpeek adapter test my-tool --fixture fixtures/sample.txt --json
+flowpeek adapter test my-tool --fixture .flowpeek/fixtures/my-tool-<timestamp>.log --report --json
 ```
+
+Read the saved fixture before writing the adapter. Proceed to the formal `flowpeek run` only after report mode returns `PASS`. If the command is one-off, keep generic instead of spending time on an adapter.
 
 Put adapters in the **project or user** directory. Never write them into the npm package install path.
 
@@ -76,6 +91,7 @@ If adapter validation fails, run with `--adapter none` or generic. Never stop th
 
 - Do not wrap every short command.
 - Do not spend a long time writing adapters for unknown tools.
+- Do not probe commands that are destructive, costly, externally visible, or unsafe to repeat.
 - Do not fabricate totals or determinate percentages.
 - Do not treat “has output” as “has progress”.
 - Do not poll `http://127.0.0.1:47831`.

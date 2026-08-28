@@ -4,7 +4,7 @@ import { parse as parseYaml } from "yaml";
 import { inspectAdapter, listAdapters, parseAdapterFile, resolveAdapter } from "./resolve.js";
 import { yamlFromSpec } from "./builtin.js";
 import { projectAdapterDir, projectRoot } from "../paths.js";
-import type { AdapterSpec } from "../types.js";
+import type { AdapterSpec, ResolvedAdapter, RunEvent } from "../types.js";
 
 export function cmdAdapterList(project: string): number {
   const all = listAdapters(project);
@@ -98,6 +98,7 @@ export async function cmdAdapterTest(opts: {
   target: string;
   fixture?: string;
   json?: boolean;
+  report?: boolean;
   project: string;
 }): Promise<number> {
   let resolved;
@@ -112,12 +113,19 @@ export async function cmdAdapterTest(opts: {
     return 1;
   }
   const errors = validateSpec(resolved.spec);
+  if (opts.report && (!opts.fixture || !existsSync(opts.fixture))) {
+    process.stderr.write("adapter report requires an existing --fixture file\n");
+    return 1;
+  }
+  const text = opts.fixture && existsSync(opts.fixture) ? readFixture(opts.fixture) : sampleFor(resolved.spec.id);
+  if (opts.report) {
+    return cmdAdapterReport({ resolved, text, errors, json: Boolean(opts.json) });
+  }
   if (errors.length) {
     process.stderr.write(errors.join("\n") + "\n");
     return 1;
   }
   const { replayAdapter } = await import("./engine.js");
-  const text = opts.fixture && existsSync(opts.fixture) ? readFixture(opts.fixture) : sampleFor(resolved.spec.id);
   const result = await replayAdapter(resolved, text);
   if (opts.json) {
     process.stdout.write(
@@ -149,8 +157,92 @@ export async function cmdAdapterTest(opts: {
   return result.disabled ? 1 : 0;
 }
 
+async function cmdAdapterReport(opts: {
+  resolved: ResolvedAdapter;
+  text: string;
+  errors: string[];
+  json: boolean;
+}): Promise<number> {
+  const matched: Record<string, number> = {
+    phase: 0,
+    progress: 0,
+    activity: 0,
+    metric: 0,
+    warning: 0,
+    error: 0,
+    heartbeat: 0,
+  };
+  let disabled = false;
+  let disabledReason = "";
+  let events: RunEvent[] = [];
+  if (!opts.errors.length) {
+    const { replayAdapterReport } = await import("./engine.js");
+    const replay = await replayAdapterReport(opts.resolved, opts.text);
+    events = replay.events;
+    disabled = replay.disabled;
+    disabledReason = replay.reason;
+    for (const event of events) {
+      if (event.type in matched) matched[event.type] += 1;
+    }
+  }
+  const latestDeterminate = [...events]
+    .reverse()
+    .find((event) => event.type === "progress" && event.progress?.kind === "determinate")
+    ?.progress;
+  const matchedTotal = Object.values(matched).reduce((sum, count) => sum + count, 0);
+  const pass = opts.errors.length === 0 && !disabled && matchedTotal > 0;
+  const reason = opts.errors.length
+    ? opts.errors.join("; ")
+    : disabled
+      ? disabledReason || "adapter disabled"
+      : matchedTotal === 0
+        ? "no adapter events matched fixture"
+        : null;
+  const report = {
+    id: opts.resolved.spec.id,
+    source: opts.resolved.source,
+    input: {
+      bytes: Buffer.byteLength(opts.text),
+      lines: countFixtureLines(opts.text),
+    },
+    matched,
+    progress: {
+      determinate: Boolean(latestDeterminate),
+      latest: latestDeterminate || null,
+    },
+    disabled,
+    disabledReason: disabledReason || null,
+    validationErrors: opts.errors,
+    result: pass ? "PASS" : "FAIL",
+    reason,
+  };
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  } else {
+    process.stdout.write(`Adapter: ${report.id}\n\n`);
+    process.stdout.write(`Input:\n  ${report.input.lines} lines\n  ${report.input.bytes} bytes\n\n`);
+    process.stdout.write("Matched:\n");
+    for (const [type, count] of Object.entries(matched)) {
+      process.stdout.write(`  ${type.padEnd(10)} ${count}\n`);
+    }
+    process.stdout.write("\nProgress:\n");
+    process.stdout.write(`  determinate: ${report.progress.determinate ? "yes" : "no"}\n`);
+    if (latestDeterminate) {
+      process.stdout.write(`  latest: ${latestDeterminate.current ?? "?"} / ${latestDeterminate.total ?? "?"}\n`);
+    }
+    process.stdout.write(`\nResult:\n  ${report.result}${reason ? ` — ${reason}` : ""}\n`);
+  }
+  return pass ? 0 : 1;
+}
+
 function readFixture(path: string): string {
   return readFileSync(path, "utf8");
+}
+
+function countFixtureLines(text: string): number {
+  if (!text.length) return 0;
+  const breaks = (text.match(/\r\n|\r|\n/g) || []).length;
+  return breaks + (/(?:\r\n|\r|\n)$/.test(text) ? 0 : 1);
 }
 
 function sampleFor(id: string): string {

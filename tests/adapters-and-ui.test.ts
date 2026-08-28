@@ -198,6 +198,7 @@ describe("dashboard HTTP", () => {
       expect(page.status).toBe(200);
       const html = await page.text();
       expect(html).toMatch(/FlowPeek/);
+      expect(html).not.toMatch(/Observing only|agent still owns the process/);
       expect(html).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/);
       const css = await fetch(`http://127.0.0.1:${port}/styles.css`).then((r) => r.text());
       expect(css).toMatch(/--iris:/);
@@ -214,6 +215,12 @@ describe("dashboard HTTP", () => {
       expect(js).not.toMatch(/\b(Stop|Restart|Kill)\b/);
       expect(js).not.toMatch(/badge \$\{run\.processState\}/);
       expect(js).not.toMatch(/id="state-badge"/);
+      expect(js).toMatch(/renderSession/);
+      expect(js).toMatch(/\/api\/sessions/);
+      expect(js).toMatch(/Sessions/);
+      expect(js).not.toMatch(/Recent|No recent sessions/);
+      expect(js).toMatch(/Finished sessions are not stored/);
+      expect(js).toMatch(/setInterval\(\(\) => void renderHome\(\), 2000\)/);
       const font = await fetch(`http://127.0.0.1:${port}/fonts/syne-700.woff2`);
       expect(font.status).toBe(200);
       expect(font.headers.get("content-type")).toMatch(/woff2/);

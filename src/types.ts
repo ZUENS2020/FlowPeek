@@ -24,6 +24,10 @@ export type RunEventType =
 
 export interface RunRecord {
   id: string;
+  sessionId: string;
+  parentRunId?: string;
+  rootRunId: string;
+  agentName?: string;
   label?: string;
   command: string[];
   cwd: string;
@@ -43,6 +47,18 @@ export interface RunRecord {
   telemetryConnected: boolean;
   telemetryDisconnectedAt?: string;
   processState: "running" | "exited" | "unknown";
+}
+
+export interface SessionSummary {
+  id: string;
+  agentName?: string;
+  cwd?: string;
+  startedAt: string;
+  endedAt?: string;
+  status: RunStatus;
+  runCount: number;
+  rootCount: number;
+  runningCount: number;
 }
 
 export interface ProgressPayload {
@@ -143,8 +159,6 @@ export interface AppConfig {
     search_paths: string[];
   };
   storage: {
-    retain_days: number;
-    max_total_mb: number;
     max_run_mb: number;
   };
   learning: {
@@ -157,6 +171,8 @@ export interface RunOptions {
   command: string[];
   cwd: string;
   project?: string;
+  sessionId?: string;
+  agentName?: string;
   label?: string;
   adapter: "auto" | "none" | string;
   agentOutput: AgentOutputMode;

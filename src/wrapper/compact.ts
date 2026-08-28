@@ -1,4 +1,19 @@
-import type { AgentOutputMode, RunEvent } from "../types.js";
+import type { AgentOutputMode, ProgressPayload, RunEvent } from "../types.js";
+
+export function formatDeterminateProgress(p: Pick<ProgressPayload, "current" | "total" | "message">): string {
+  const frac = p.current != null && p.total != null ? `${p.current}/${p.total}` : "";
+  const msg = (p.message || "").trim();
+  if (!frac) return msg;
+  if (!msg || msg === frac) return frac;
+  if (msg.includes(frac)) return msg;
+  return `${msg} ${frac}`;
+}
+
+function alertDedupeKey(kind: string, msg: string): string | null {
+  if (kind !== "[warning]" && kind !== "[error]") return null;
+  const core = msg.replace(/^(?:warning|warn|error|fatal|panic):\s*/i, "").trim().toLowerCase();
+  return `${kind}:${core}`;
+}
 
 const WARNING_RE = /(?:^|\b)(?:warning|warn)[:\s]/i;
 const ERROR_RE =
@@ -12,6 +27,7 @@ export class CompactPrinter {
   private phase = "running";
   private lineBuf = "";
   private printedPhases = new Set<string>();
+  private printedAlerts = new Set<string>();
   enabled: boolean;
 
   constructor(
@@ -53,7 +69,7 @@ export class CompactPrinter {
         const p = ev.progress;
         if (!p) break;
         if (p.kind === "determinate" && p.total && p.current != null) {
-          this.line("[progress]", `${p.current}/${p.total}${p.message ? " " + p.message : ""}`);
+          this.line("[progress]", formatDeterminateProgress(p));
         } else if (p.message) {
           this.line("[progress]", p.message);
         }
@@ -107,6 +123,11 @@ export class CompactPrinter {
   }
 
   private line(kind: string, msg: string): void {
+    const key = alertDedupeKey(kind, msg);
+    if (key) {
+      if (this.printedAlerts.has(key)) return;
+      this.printedAlerts.add(key);
+    }
     this.write(`[flowpeek] ${kind} ${msg}\n`);
   }
 

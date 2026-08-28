@@ -15,6 +15,10 @@ export function getDb(): DatabaseSync {
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
+      session_id TEXT,
+      parent_run_id TEXT,
+      root_run_id TEXT,
+      agent_name TEXT,
       label TEXT,
       command_json TEXT NOT NULL,
       cwd TEXT NOT NULL,
@@ -39,7 +43,28 @@ export function getDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_runs_started ON runs(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
   `);
+  migrateRunContext(db);
   return db;
+}
+
+function migrateRunContext(database: DatabaseSync): void {
+  const rows = database.prepare("PRAGMA table_info(runs)").all() as { name: string }[];
+  const columns = new Set(rows.map((row) => row.name));
+  const additions: Array<[string, string]> = [
+    ["session_id", "TEXT"],
+    ["parent_run_id", "TEXT"],
+    ["root_run_id", "TEXT"],
+    ["agent_name", "TEXT"],
+  ];
+  for (const [name, type] of additions) {
+    if (!columns.has(name)) database.exec(`ALTER TABLE runs ADD COLUMN ${name} ${type}`);
+  }
+  database.exec(`
+    UPDATE runs SET session_id = id WHERE session_id IS NULL OR session_id = '';
+    UPDATE runs SET root_run_id = id WHERE root_run_id IS NULL OR root_run_id = '';
+    CREATE INDEX IF NOT EXISTS idx_runs_session ON runs(session_id, started_at);
+    CREATE INDEX IF NOT EXISTS idx_runs_parent ON runs(parent_run_id);
+  `);
 }
 
 export function closeDb(): void {
@@ -54,6 +79,10 @@ export function closeDb(): void {
 function rowToRun(row: Record<string, unknown>): RunRecord {
   return {
     id: String(row.id),
+    sessionId: row.session_id ? String(row.session_id) : String(row.id),
+    parentRunId: row.parent_run_id ? String(row.parent_run_id) : undefined,
+    rootRunId: row.root_run_id ? String(row.root_run_id) : String(row.id),
+    agentName: row.agent_name ? String(row.agent_name) : undefined,
     label: row.label ? String(row.label) : undefined,
     command: JSON.parse(String(row.command_json)),
     cwd: String(row.cwd),
@@ -82,11 +111,16 @@ export function upsertRun(run: RunRecord): void {
   const d = getDb();
   d.prepare(
     `INSERT INTO runs (
-      id, label, command_json, cwd, started_at, ended_at, status, exit_code, signal,
+      id, session_id, parent_run_id, root_run_id, agent_name,
+      label, command_json, cwd, started_at, ended_at, status, exit_code, signal,
       adapter_id, adapter_source, pty, agent_output, pid, pgid, dropped_raw_chunks,
       dropped_raw_bytes, telemetry_connected, telemetry_disconnected_at, process_state
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET
+      session_id=excluded.session_id,
+      parent_run_id=excluded.parent_run_id,
+      root_run_id=excluded.root_run_id,
+      agent_name=excluded.agent_name,
       label=excluded.label,
       ended_at=excluded.ended_at,
       status=excluded.status,
@@ -104,6 +138,10 @@ export function upsertRun(run: RunRecord): void {
     `,
   ).run(
     run.id,
+    run.sessionId,
+    run.parentRunId ?? null,
+    run.rootRunId,
+    run.agentName ?? null,
     run.label ?? null,
     JSON.stringify(run.command),
     run.cwd,
@@ -133,18 +171,20 @@ export function getRun(id: string): RunRecord | undefined {
   return row ? rowToRun(row) : undefined;
 }
 
-export function listRuns(limit = 200): RunRecord[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?")
-    .all(limit) as Record<string, unknown>[];
-  return rows.map(rowToRun);
-}
-
 export function deleteRunRow(id: string): void {
   getDb().prepare("DELETE FROM runs WHERE id = ?").run(id);
 }
 
-export function listRunIds(): string[] {
-  const rows = getDb().prepare("SELECT id FROM runs").all() as { id: string }[];
-  return rows.map((r) => r.id);
+/**
+ * Remove active rows left behind by a daemon crash. Exited rows may belong to
+ * an older FlowPeek version, so upgrading to ephemeral history never deletes
+ * them without an explicit user action.
+ */
+export function purgeInterruptedRunRows(): string[] {
+  const d = getDb();
+  const rows = d
+    .prepare("SELECT id FROM runs WHERE status != 'exited' OR process_state != 'exited'")
+    .all() as { id: string }[];
+  d.prepare("DELETE FROM runs WHERE status != 'exited' OR process_state != 'exited'").run();
+  return rows.map((row) => row.id);
 }

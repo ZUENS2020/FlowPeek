@@ -141,6 +141,8 @@ describe("telemetry reconnection restores running state", () => {
   function makeRun(id: string): RunRecord {
     return {
       id,
+      sessionId: id,
+      rootRunId: id,
       command: ["echo", "hi"],
       cwd: home,
       startedAt: new Date().toISOString(),

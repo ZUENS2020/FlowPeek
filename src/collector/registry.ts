@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
-import type { RunEvent, RunRecord } from "../types.js";
+import type { RunEvent, RunRecord, SessionSummary } from "../types.js";
 import { nowIso } from "../ids.js";
-import { upsertRun, getRun, listRuns } from "../storage/db.js";
-import { createLogWriter, readLogEvents, type LogWriter } from "../storage/log-store.js";
+import { deleteRunRow, upsertRun } from "../storage/db.js";
+import { createLogWriter, deleteRunLog, type LogWriter } from "../storage/log-store.js";
 import { AdapterSession } from "../adapters/engine.js";
 import { resolveAdapter } from "../adapters/resolve.js";
 import type { AppConfig } from "../types.js";
@@ -27,6 +27,45 @@ export interface LiveRun {
 
 const RAW_RING = 4000;
 const STRUCT_RING = 500;
+
+function isActive(run: RunRecord): boolean {
+  return run.processState !== "exited";
+}
+
+export function summarizeSession(id: string, runs: RunRecord[]): SessionSummary {
+  const ordered = [...runs].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const runIds = new Set(ordered.map((run) => run.id));
+  const byId = new Map(ordered.map((run) => [run.id, run]));
+  const isEffectiveRoot = (run: RunRecord): boolean => {
+    if (!run.parentRunId || !runIds.has(run.parentRunId) || run.parentRunId === run.id) return true;
+    const seen = new Set([run.id]);
+    let cursor: RunRecord | undefined = byId.get(run.parentRunId);
+    while (cursor) {
+      if (seen.has(cursor.id)) return true;
+      seen.add(cursor.id);
+      cursor = cursor.parentRunId ? byId.get(cursor.parentRunId) : undefined;
+    }
+    return false;
+  };
+  const runningCount = ordered.filter((run) => run.processState === "running").length;
+  const hasUnknown = ordered.some((run) => run.processState === "unknown");
+  const status: SessionSummary["status"] = runningCount > 0 ? "running" : hasUnknown ? "unknown" : "exited";
+  const ended = ordered
+    .map((run) => run.endedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  return {
+    id,
+    agentName: ordered.find((run) => run.agentName)?.agentName,
+    cwd: ordered.find((run) => !run.parentRunId)?.cwd || ordered[0]?.cwd,
+    startedAt: ordered[0]?.startedAt || nowIso(),
+    endedAt: status === "exited" ? ended.at(-1) : undefined,
+    status,
+    runCount: ordered.length,
+    rootCount: ordered.filter(isEffectiveRoot).length,
+    runningCount,
+  };
+}
 
 function absorbLatest(live: LiveRun, ev: RunEvent): void {
   const L = live.latest;
@@ -56,6 +95,9 @@ export class RunRegistry extends EventEmitter {
   }
 
   startRun(run: RunRecord, project: string): LiveRun {
+    // Accept a v0.1 wrapper during upgrades: legacy runs become one-run sessions.
+    run.sessionId ||= run.id;
+    run.rootRunId ||= run.id;
     run.telemetryConnected = true;
     upsertRun(run);
     const maxBytes = this.cfg.storage.max_run_mb * 1024 * 1024;
@@ -188,8 +230,6 @@ export class RunRegistry extends EventEmitter {
     live.run.exitCode = code;
     live.run.signal = signal;
     live.run.endedAt = endedAt;
-    upsertRun(live.run);
-    void live.adapter?.onExit(code, signal);
     this.publishStructured(live, {
       runId: id,
       seq: 0,
@@ -198,7 +238,23 @@ export class RunRegistry extends EventEmitter {
       exitCode: code,
       signal,
     });
-    // Keep live subscribers briefly, then archive.
+    // Let the adapter emit its final semantic events, then discard all durable
+    // state. The in-memory grace window only exists to deliver the final SSE
+    // event to an already-open run page; it is never listed as history.
+    const adapterExit = live.adapter?.onExit(code, signal) ?? Promise.resolve();
+    void adapterExit
+      .catch(() => {
+        /* adapter exit is fail-open */
+      })
+      .finally(() => {
+        live.writer.dispose();
+        deleteRunLog(id);
+        try {
+          deleteRunRow(id);
+        } catch {
+          /* storage cleanup is best-effort */
+        }
+      });
     setTimeout(() => {
       live.adapter?.dispose();
       this.live.delete(id);
@@ -265,16 +321,40 @@ export class RunRegistry extends EventEmitter {
         live: true,
       };
     }
-    const run = getRun(id);
-    if (!run) return undefined;
-    return { run, events: readLogEvents(id, 0, 2000), live: false };
+    return undefined;
   }
 
   list(): RunRecord[] {
-    const fromDb = listRuns(200);
-    const map = new Map(fromDb.map((r) => [r.id, r]));
-    for (const l of this.live.values()) map.set(l.run.id, l.run);
-    return [...map.values()].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+    return [...this.live.values()]
+      .map((live) => live.run)
+      .filter(isActive)
+      .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+  }
+
+  listSessions(): SessionSummary[] {
+    const groups = new Map<string, RunRecord[]>();
+    for (const { run } of this.live.values()) {
+      const bucket = groups.get(run.sessionId) || [];
+      bucket.push(run);
+      groups.set(run.sessionId, bucket);
+    }
+    return [...groups.entries()]
+      .filter(([, runs]) => runs.some(isActive))
+      .map(([id, runs]) => ({
+        summary: summarizeSession(id, runs),
+        latestAt: runs.reduce((latest, run) => (run.startedAt > latest ? run.startedAt : latest), ""),
+      }))
+      .sort((a, b) => b.latestAt.localeCompare(a.latestAt))
+      .map((entry) => entry.summary);
+  }
+
+  getSession(id: string): { session: SessionSummary; runs: RunRecord[] } | undefined {
+    const runs = [...this.live.values()]
+      .map((live) => live.run)
+      .filter((run) => run.sessionId === id)
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    if (!runs.some(isActive)) return undefined;
+    return { session: summarizeSession(id, runs), runs };
   }
 
   private broadcast(live: LiveRun, ev: RunEvent): void {

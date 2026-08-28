@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { chmodSync, existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import type { PtyMode } from "../types.js";
 import type { IoStream, SpawnHandle } from "./signals.js";
 import { killProcessGroup } from "./signals.js";
+
+const require = createRequire(import.meta.url);
 
 export interface SpawnSpec {
   command: string[];
@@ -29,6 +34,29 @@ export function ptyAvailable(): boolean {
   return ptyModule !== null && ptyModule !== undefined;
 }
 
+export function spawnHelperPaths(): string[] {
+  try {
+    const pkg = dirname(require.resolve("node-pty/package.json"));
+    return [
+      join(pkg, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper"),
+      join(pkg, "build", "Release", "spawn-helper"),
+    ].filter((p) => existsSync(p));
+  } catch {
+    return [];
+  }
+}
+
+/** npm/pack often drops the execute bit on node-pty's spawn-helper; posix_spawnp then fails. */
+export function ensureSpawnHelperExecutable(): void {
+  for (const p of spawnHelperPaths()) {
+    try {
+      chmodSync(p, 0o755);
+    } catch {
+      /* ignore — spawn may still work, or auto will fall back to pipes */
+    }
+  }
+}
+
 export async function spawnCommand(spec: SpawnSpec): Promise<SpawnHandle> {
   const forceNever = spec.mode === "never";
   const wantPty = spec.mode === "always" || spec.mode === "auto";
@@ -36,7 +64,17 @@ export async function spawnCommand(spec: SpawnSpec): Promise<SpawnHandle> {
   if (!forceNever && wantPty) {
     const pty = await loadPty();
     if (pty) {
-      return spawnPty(pty, spec);
+      ensureSpawnHelperExecutable();
+      try {
+        return spawnPty(pty, spec);
+      } catch (err) {
+        if (spec.mode === "always") {
+          throw err instanceof Error ? err : new Error(String(err));
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[flowpeek] PTY spawn failed (${msg}); falling back to pipes\n`);
+        return spawnPipes(spec);
+      }
     }
     if (spec.mode === "always") {
       throw new Error(

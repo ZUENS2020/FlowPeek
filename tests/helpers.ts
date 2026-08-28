@@ -34,7 +34,7 @@ export async function freePort(): Promise<number> {
 }
 
 export function avEnv(home: string, port: number, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  return {
+  const env = {
     ...process.env,
     FLOWPEEK_HOME: home,
     FLOWPEEK_PORT: String(port),
@@ -42,6 +42,10 @@ export function avEnv(home: string, port: number, extra: NodeJS.ProcessEnv = {})
     FLOWPEEK_SOCK: join(home, "daemon.sock"),
     ...extra,
   };
+  for (const key of ["FLOWPEEK_RUN_ID", "FLOWPEEK_SESSION_ID", "FLOWPEEK_ROOT_RUN_ID", "FLOWPEEK_AGENT_NAME"]) {
+    if (!(key in extra)) delete env[key];
+  }
+  return env;
 }
 
 export function spawnCli(

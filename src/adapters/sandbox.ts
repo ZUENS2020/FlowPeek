@@ -183,7 +183,17 @@ export class ScriptSandbox {
 
   private dump(handle: { alive: boolean }): string {
     try {
-      return String(this.ctx?.dump(handle as never) ?? "error");
+      const value = this.ctx?.dump(handle as never);
+      if (value && typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        if (record.message) return String(record.message);
+        try {
+          return JSON.stringify(record);
+        } catch {
+          return "script error";
+        }
+      }
+      return String(value ?? "error");
     } catch {
       return "error";
     }

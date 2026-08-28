@@ -1,8 +1,8 @@
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { loadConfig } from "../config.js";
 import { ensureHome, daemonPidPath, dashboardUrl, isLoopback } from "../paths.js";
-import { getDb } from "../storage/db.js";
-import { sweepRetention } from "../storage/retention.js";
+import { getDb, purgeInterruptedRunRows } from "../storage/db.js";
+import { deleteRunLog } from "../storage/log-store.js";
 import { RunRegistry } from "./registry.js";
 import { startIpcServer } from "./ipc.js";
 import { startHttpServer } from "./http.js";
@@ -17,6 +17,7 @@ export async function startDaemon(opts: { foreground?: boolean; project?: string
   }
   const home = ensureHome();
   getDb();
+  for (const id of purgeInterruptedRunRows()) deleteRunLog(id);
   const project = opts.project || process.cwd();
   const registry = new RunRegistry(cfg);
   const startedAt = Date.now();
@@ -42,20 +43,6 @@ export async function startDaemon(opts: { foreground?: boolean; project?: string
 
   const stale = setInterval(() => registry.checkStale(), 3000);
   stale.unref?.();
-  const retain = setInterval(() => {
-    try {
-      sweepRetention(cfg, registry.liveIds());
-    } catch {
-      /* ignore */
-    }
-  }, 60_000);
-  retain.unref?.();
-  try {
-    sweepRetention(cfg, registry.liveIds());
-  } catch {
-    /* ignore */
-  }
-
   const shutdown = () => {
     try {
       http.close();

@@ -2,10 +2,17 @@ import { TermBuf } from "./term.js";
 
 const app = document.getElementById("app");
 const healthEl = document.getElementById("health");
+let activeCleanup = () => {};
 
 function route() {
+  activeCleanup();
+  activeCleanup = () => {};
+  const s = location.pathname.match(/^\/s\/([^/]+)/);
+  if (s) return renderSession(decodeURIComponent(s[1]));
   const m = location.pathname.match(/^\/r\/([^/]+)/);
   if (m) return renderDetail(m[1]);
+  const refresh = setInterval(() => void renderHome(), 2000);
+  activeCleanup = () => clearInterval(refresh);
   return renderHome();
 }
 
@@ -55,6 +62,33 @@ function cwdSpan(cwd) {
   return `<span class="cwd" title="${path}">${path}</span>`;
 }
 
+function projectName(cwd) {
+  const parts = String(cwd || "").split(/[\\/]+/).filter(Boolean);
+  return parts.at(-1) || "Session";
+}
+
+function sessionTitle(session) {
+  return session.agentName || projectName(session.cwd);
+}
+
+function sessionCard(session) {
+  const live = session.status === "running";
+  const details = [
+    `${session.runCount} run${session.runCount === 1 ? "" : "s"}`,
+    session.rootCount > 1 ? `${session.rootCount} roots` : "",
+    session.runningCount ? `${session.runningCount} running` : "",
+    elapsed(session),
+  ].filter(Boolean);
+  return `<a class="card session-card${live ? " is-live" : ""}" href="/s/${encodeURIComponent(session.id)}">
+    <span class="${irisClass(session.status)}" aria-hidden="true"></span>
+    <div class="card-main">
+      <div class="flags"><span class="badge">session</span></div>
+      <div class="cmd">${esc(sessionTitle(session))}</div>
+      <div class="meta"><span class="cwd" title="${esc(session.id)}">${esc(session.id)}</span>${details.map((d) => `<span>${esc(d)}</span>`).join("")}</div>
+    </div>
+  </a>`;
+}
+
 function card(run) {
   const live = run.processState === "running";
   return `<a class="card${live ? " is-live" : ""}" href="/r/${run.id}">
@@ -69,6 +103,15 @@ function card(run) {
   </a>`;
 }
 
+function progressLabel(p) {
+  const frac = p.current != null && p.total != null ? `${p.current}/${p.total}` : "";
+  const msg = String(p.message || "").trim();
+  if (!frac) return msg;
+  if (!msg || msg === frac) return frac;
+  if (msg.includes(frac)) return msg;
+  return `${msg} ${frac}`;
+}
+
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -79,7 +122,7 @@ async function renderHome() {
   document.title = "FlowPeek";
   let data;
   try {
-    data = await fetchJson("/api/runs");
+    data = await fetchJson("/api/sessions");
   } catch {
     app.innerHTML = `<div class="empty invite">
       <h1>Collector unreachable</h1>
@@ -87,27 +130,114 @@ async function renderHome() {
     </div>`;
     return;
   }
-  const runs = data.runs || [];
-  const running = runs.filter((r) => r.processState === "running");
-  const rest = runs.filter((r) => r.processState !== "running");
-  if (!runs.length) {
+  const sessions = data.sessions || [];
+  if (!sessions.length) {
     app.innerHTML = `<div class="empty invite">
       <h1>Nothing to watch</h1>
       <p>Wrap a long command. FlowPeek only observes — it never starts or stops the process.</p>
       <p><code>flowpeek run -- npm run build</code></p>
+      <p>Finished sessions are not stored.</p>
     </div>`;
     return;
   }
   app.innerHTML = `<div class="scan">
     <section class="lane">
-      <div class="lane-head"><h1>Live</h1><span class="count">${running.length}</span></div>
-      <div class="grid">${running.length ? running.map(card).join("") : `<div class="empty">Quiet. No live commands.</div>`}</div>
-    </section>
-    <section class="lane">
-      <div class="lane-head"><h1>Recent</h1><span class="count">${rest.length}</span></div>
-      <div class="grid">${rest.length ? rest.map(card).join("") : `<div class="empty">No recent runs.</div>`}</div>
+      <div class="lane-head"><h1>Live</h1><span class="count">${sessions.length}</span></div>
+      <div class="grid">${sessions.map(sessionCard).join("")}</div>
     </section>
   </div>`;
+}
+
+function treeModel(runs) {
+  const ordered = [...runs].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const byId = new Map(ordered.map((run) => [run.id, run]));
+  const safeParent = new Map();
+  for (const run of ordered) {
+    if (!run.parentRunId || !byId.has(run.parentRunId) || run.parentRunId === run.id) {
+      safeParent.set(run.id, null);
+      continue;
+    }
+    const seen = new Set([run.id]);
+    let cursor = run.parentRunId;
+    let cyclic = false;
+    while (cursor && byId.has(cursor)) {
+      if (seen.has(cursor)) {
+        cyclic = true;
+        break;
+      }
+      seen.add(cursor);
+      cursor = byId.get(cursor).parentRunId;
+    }
+    safeParent.set(run.id, cyclic ? null : run.parentRunId);
+  }
+  const children = new Map();
+  const roots = [];
+  for (const run of ordered) {
+    const parent = safeParent.get(run.id);
+    if (!parent) roots.push(run);
+    else {
+      const bucket = children.get(parent) || [];
+      bucket.push(run);
+      children.set(parent, bucket);
+    }
+  }
+  return { roots, children };
+}
+
+function runNode(run, children, depth = 0, visited = new Set()) {
+  if (visited.has(run.id)) return "";
+  const nextVisited = new Set(visited);
+  nextVisited.add(run.id);
+  const nested = children.get(run.id) || [];
+  return `<li class="run-node" style="--depth:${depth}">
+    <a href="/r/${encodeURIComponent(run.id)}">
+      <span class="${irisClass(run.processState)}" aria-hidden="true"></span>
+      <span class="run-node-main"><span class="cmd">${esc(run.label || fmtCmd(run))}</span>
+      <span class="meta"><span>${elapsed(run)}</span>${run.exitCode != null ? `<span>exit ${run.exitCode}</span>` : ""}</span></span>
+    </a>
+    ${nested.length ? `<ul>${nested.map((child) => runNode(child, children, depth + 1, nextVisited)).join("")}</ul>` : ""}
+  </li>`;
+}
+
+async function renderSession(id) {
+  document.title = `Session ${id} · FlowPeek`;
+  let stopped = false;
+  let timer;
+  activeCleanup = () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  };
+
+  const refresh = async () => {
+    let payload;
+    try {
+      payload = await fetchJson(`/api/sessions/${encodeURIComponent(id)}`);
+    } catch {
+      if (!stopped) {
+        app.innerHTML = `<div class="empty invite"><h1>Session not found</h1><p>It may have been pruned, or the id is wrong.</p></div>`;
+      }
+      return;
+    }
+    if (stopped) return;
+    const session = payload.session;
+    const runs = payload.runs || [];
+    const { roots, children } = treeModel(runs);
+    app.innerHTML = `
+      <p class="crumb"><a href="/">Sessions</a></p>
+      <header class="run-head session-head">
+        <span class="${irisClass(session.status)}" aria-hidden="true"></span>
+        <div class="run-titles">
+          <h1 class="cmd">${esc(sessionTitle(session))}</h1>
+          <div class="cmd-inline">${esc(session.id)}</div>
+          <div class="meta"><span>${session.runCount} runs</span><span>${session.rootCount} roots</span><span>${elapsed(session)}</span></div>
+        </div>
+      </header>
+      <section class="session-tree" aria-label="Session run tree">
+        <ul>${roots.map((root) => runNode(root, children)).join("")}</ul>
+      </section>`;
+    timer = setTimeout(refresh, 2000);
+  };
+  await refresh();
 }
 
 function fromB64(b64) {
@@ -133,7 +263,7 @@ async function renderDetail(id) {
   const latest = payload.latest || {};
   app.innerHTML = `
     <a class="skip" href="#term">Skip to live output</a>
-    <p class="crumb"><a href="/">Runs</a></p>
+    <p class="crumb"><a href="/">Sessions</a> / <a href="/s/${encodeURIComponent(run.sessionId)}">Session</a> / Run</p>
     <header class="run-head">
       <span class="${irisClass(run.processState)}" id="run-iris" aria-hidden="true"></span>
       <div class="run-titles">
@@ -188,7 +318,7 @@ async function renderDetail(id) {
     if (p.kind === "determinate" && p.total) {
       const pct = Math.max(0, Math.min(100, p.percent ?? (100 * p.current) / p.total));
       pbar.innerHTML = `<div class="progress"><span style="width:${pct}%"></span></div>
-        <div class="meta">${esc(p.message || "")} ${p.current}/${p.total}</div>`;
+        <div class="meta">${esc(progressLabel(p))}</div>`;
     } else if (p.message) {
       pbar.innerHTML = `<div class="meta">${esc(p.message)}</div>`;
     }
@@ -277,6 +407,7 @@ async function renderDetail(id) {
   }
 
   const es = new EventSource(`/api/runs/${id}/stream`);
+  activeCleanup = () => es.close();
   pre.addEventListener("scroll", () => {
     stick = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
   });

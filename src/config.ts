@@ -29,8 +29,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     search_paths: [],
   },
   storage: {
-    retain_days: 7,
-    max_total_mb: 2048,
     max_run_mb: 256,
   },
   learning: {

@@ -6,8 +6,6 @@ import type { AppConfig, RunEvent } from "../types.js";
 import { isLoopback } from "../paths.js";
 import { listAdapters } from "../adapters/resolve.js";
 import type { RunRegistry } from "./registry.js";
-import { getRun } from "../storage/db.js";
-import { readLogEvents } from "../storage/log-store.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -76,6 +74,21 @@ export function startHttpServer(
         json(res, { runs: registry.list() });
         return;
       }
+      if (p === "/api/sessions") {
+        json(res, { sessions: registry.listSessions() });
+        return;
+      }
+      const sessionMatch = p.match(/^\/api\/sessions\/([^/]+)$/);
+      if (sessionMatch) {
+        const id = decodeURIComponent(sessionMatch[1]);
+        const session = registry.getSession(id);
+        if (!session) {
+          notFound(res);
+          return;
+        }
+        json(res, session);
+        return;
+      }
       const runMatch = p.match(/^\/api\/runs\/([^/]+)(?:\/(events|stream))?$/);
       if (runMatch) {
         const id = decodeURIComponent(runMatch[1]);
@@ -85,7 +98,7 @@ export function startHttpServer(
           return;
         }
         const snap = registry.snapshot(id);
-        const run = snap?.run || getRun(id);
+        const run = snap?.run;
         if (!run) {
           notFound(res);
           return;
@@ -97,7 +110,7 @@ export function startHttpServer(
             ? [...live.rawRing, ...live.structured]
                 .filter((e) => e.seq > after)
                 .sort((a, b) => a.seq - b.seq)
-            : readLogEvents(id, after, 8000);
+            : [];
           json(res, { events });
           return;
         }
@@ -191,11 +204,14 @@ function sseStream(
 
 function serveStatic(res: http.ServerResponse, pub: string, pathname: string): void {
   let rel = pathname;
-  if (rel === "/" || rel.startsWith("/r/")) rel = "/index.html";
+  if (rel === "/" || rel.startsWith("/r/") || rel.startsWith("/s/")) rel = "/index.html";
   const safe = join(pub, rel.replace(/^\/+/, ""));
   if (!safe.startsWith(pub) || !existsSync(safe) || !statSync(safe).isFile()) {
     const index = join(pub, "index.html");
-    if (existsSync(index) && (pathname === "/" || pathname.startsWith("/r/"))) {
+    if (
+      existsSync(index) &&
+      (pathname === "/" || pathname.startsWith("/r/") || pathname.startsWith("/s/"))
+    ) {
       streamFile(res, index);
       return;
     }

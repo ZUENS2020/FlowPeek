@@ -137,14 +137,6 @@ a:hover { text-decoration: underline; text-underline-offset: 0.18em; }
 }
 .brand:hover { text-decoration: none; color: var(--iris); }
 
-.tag {
-  margin: 0;
-  color: var(--quiet);
-  font-size: 0.9rem;
-  flex: 1;
-  min-width: 12rem;
-}
-
 .pill {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -155,6 +147,7 @@ a:hover { text-decoration: underline; text-underline-offset: 0.18em; }
   padding: 0.2rem 0.65rem;
   color: var(--quiet);
   background: var(--panel);
+  margin-left: auto;
 }
 .pill.ok {
   color: var(--iris);
@@ -462,13 +455,65 @@ h1 {
 .err { color: var(--fault); }
 .warn { color: var(--warn); }
 
+.session-card .cwd {
+  max-width: 18rem;
+}
+
+.session-head {
+  margin-bottom: var(--space-5);
+}
+
+.session-tree,
+.session-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-tree > ul {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.run-node > a {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-left: calc(var(--depth) * 1.25rem);
+  padding: 0.72rem 0.85rem;
+  border-top: 1px solid var(--line);
+  color: inherit;
+  text-decoration: none;
+}
+
+.run-node > a:hover {
+  background: color-mix(in srgb, var(--iris) 5%, transparent);
+  text-decoration: none;
+}
+
+.run-node-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.run-node-main .cmd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-node-main .meta {
+  display: flex;
+  gap: var(--space-3);
+}
+
 @media (max-width: 640px) {
   .top, main {
     padding-left: 1rem;
     padding-right: 1rem;
   }
   .top { padding-top: 1rem; }
-  .tag { flex-basis: 100%; min-width: 0; }
   .empty.invite { padding-top: 1.6rem; }
   .run-titles h1.cmd { font-size: 0.95rem; }
   #term {
@@ -480,7 +525,6 @@ h1 {
 
 @media (max-width: 400px) {
   html { font-size: 15px; }
-  .tag { display: none; }
   .pill { max-width: 100%; }
   .status-strip { gap: var(--space-3) var(--space-4); }
 }

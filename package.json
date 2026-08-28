@@ -1,7 +1,16 @@
 {
   "name": "flowpeek",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Transparent, AI-programmable observability layer for long-running coding-agent CLI processes.",
+  "author": "ZUENS2020",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZUENS2020/FlowPeek.git"
+  },
+  "homepage": "https://github.com/ZUENS2020/FlowPeek#readme",
+  "bugs": {
+    "url": "https://github.com/ZUENS2020/FlowPeek/issues"
+  },
   "type": "module",
   "bin": {
     "flowpeek": "./dist/cli.js",
@@ -15,6 +24,8 @@
     "dist",
     "skill",
     "examples",
+    "scripts/ensure-pty-helper.js",
+    "CHANGELOG.md",
     "README.md"
   ],
   "engines": {
@@ -23,6 +34,7 @@
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
     "prepare": "npm run build",
+    "postinstall": "node scripts/ensure-pty-helper.js",
     "dev": "tsx src/cli.ts",
     "daemon": "node dist/cli.js daemon --foreground",
     "start": "node dist/cli.js daemon --foreground",

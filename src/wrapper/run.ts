@@ -1,58 +1,14 @@
 import { loadConfig } from "../config.js";
+import { childEnvForContext, resolveRunContext } from "../context.js";
 import { newRunId, nowIso } from "../ids.js";
-import { ensureHome, runUrl } from "../paths.js";
+import { ensureHome, runUrl, sessionUrl } from "../paths.js";
 import type { RunOptions, RunRecord } from "../types.js";
 import { CompactPrinter } from "./compact.js";
 import { ensureDaemon } from "./ensure-daemon.js";
+import { forwardStdinToPty } from "./io.js";
 import { installSignalForwarders, unixExitCode, type IoStream } from "./signals.js";
 import { spawnCommand } from "./spawn.js";
 import { TelemetryClient } from "./telemetry.js";
-
-function forwardStdinToPty(handle: { pty: boolean; write(data: string | Buffer): void }): () => void {
-  if (!handle.pty) return () => undefined;
-  const stdin = process.stdin;
-  if (!stdin || stdin.destroyed || stdin.readableEnded) return () => undefined;
-
-  let rawSet = false;
-  if (stdin.isTTY) {
-    try {
-      stdin.setRawMode(true);
-      rawSet = true;
-    } catch {
-      /* ignore — not all TTYs support raw mode */
-    }
-  }
-  const onData = (chunk: string | Buffer) => {
-    try {
-      handle.write(chunk);
-    } catch {
-      /* fail open */
-    }
-  };
-  const onError = () => {
-    /* ignore stdin errors; never affect the child */
-  };
-  stdin.on("data", onData);
-  stdin.on("error", onError);
-  if (stdin.isPaused()) stdin.resume();
-
-  return () => {
-    stdin.off("data", onData);
-    stdin.off("error", onError);
-    if (rawSet) {
-      try {
-        stdin.setRawMode(false);
-      } catch {
-        /* ignore */
-      }
-    }
-    try {
-      stdin.pause();
-    } catch {
-      /* ignore */
-    }
-  };
-}
 
 function passthroughDest(stream: IoStream): NodeJS.WriteStream {
   return stream === "stderr" ? process.stderr : process.stdout;
@@ -72,8 +28,16 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
   ensureHome();
 
   const runId = newRunId();
+  const parentEnv = opts.env || process.env;
+  const context = resolveRunContext({
+    runId,
+    sessionId: opts.sessionId,
+    agentName: opts.agentName,
+    env: parentEnv,
+  });
   const run: RunRecord = {
     id: runId,
+    ...context,
     label: opts.label,
     command: opts.command,
     cwd: opts.cwd,
@@ -117,7 +81,12 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
     process.stderr.write(
       JSON.stringify({
         runId,
+        sessionId: context.sessionId,
+        parentRunId: context.parentRunId ?? null,
+        rootRunId: context.rootRunId,
+        agentName: context.agentName ?? null,
         url: runUrl(runId, cfg.dashboard.host, cfg.dashboard.port),
+        sessionUrl: sessionUrl(context.sessionId, cfg.dashboard.host, cfg.dashboard.port),
         command: opts.command,
         cwd: opts.cwd,
         daemon: daemonOk,
@@ -130,7 +99,7 @@ export async function runWrapped(opts: RunOptions): Promise<number> {
     handle = await spawnCommand({
       command: opts.command,
       cwd: opts.cwd,
-      env: opts.env || process.env,
+      env: childEnvForContext(parentEnv, runId, context),
       mode: opts.pty,
     });
   } catch (err) {

@@ -53,6 +53,10 @@ export function projectAdapterDir(project: string): string {
   return join(project, ".flowpeek", "adapters");
 }
 
+export function projectFixtureDir(project: string): string {
+  return join(project, ".flowpeek", "fixtures");
+}
+
 export function projectConfigPath(project: string): string {
   return join(project, ".flowpeek", "config.yaml");
 }
@@ -67,6 +71,10 @@ export function dashboardUrl(host = DEFAULT_HOST, port = DEFAULT_PORT): string {
 
 export function runUrl(runId: string, host = DEFAULT_HOST, port = DEFAULT_PORT): string {
   return `${dashboardUrl(host, port)}/r/${runId}`;
+}
+
+export function sessionUrl(sessionId: string, host = DEFAULT_HOST, port = DEFAULT_PORT): string {
+  return `${dashboardUrl(host, port)}/s/${encodeURIComponent(sessionId)}`;
 }
 
 export function isLoopback(host: string): boolean {

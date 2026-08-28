@@ -8,15 +8,26 @@ The original design spec used the working name **AgentView**. The public product
 
 ## Install
 
+The npm registry publication is currently deferred. Install the current source release directly from GitHub:
+
 ```bash
-npm install -g .
-# or from the repo
+npm install -g github:ZUENS2020/FlowPeek
+```
+
+For development:
+
+```bash
+git clone https://github.com/ZUENS2020/FlowPeek.git
+cd FlowPeek
 npm install
 npm run build
-npx flowpeek --help
+npm link
+flowpeek --help
 ```
 
 Requires Node.js 22.5+ (uses `node:sqlite`).
+
+Current source release: **0.2.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Core command
 
@@ -41,6 +52,8 @@ Open that URL on the same machine. The dashboard binds **127.0.0.1 only**.
 | `--agent-output passthrough\|compact` | Default `passthrough`: original output goes to the caller |
 | `--pty auto\|always\|never` | Default `auto` (prefer PTY). `--no-pty` = `never` |
 | `--project <path>` | Project root for `.flowpeek/` config and adapters |
+| `--session <id>` | Correlate concurrently active runs in one session |
+| `--agent <name>` | Optional agent name shown for the session |
 | `--json-meta` | One JSON metadata line on stderr |
 | `--no-dashboard-url` | Skip the Live URL line |
 
@@ -61,11 +74,48 @@ flowpeek adapter resolve -- cargo build
 flowpeek adapter inspect cargo-build
 flowpeek adapter validate .flowpeek/adapters/my.yaml
 flowpeek adapter test cargo-build --fixture fixtures/cargo.txt --json
+flowpeek adapter test cargo-build --fixture fixtures/cargo.txt --report --json
 flowpeek adapter scaffold my-tool --kind yaml
 flowpeek adapter scaffold my-tool --kind script
 ```
 
 The wrapper starts the daemon automatically if it is not running. Daemon failure never blocks the real command (fail open).
+
+## Sessions and nested runs
+
+Every top-level run gets a lightweight session id. Reuse one id to correlate commands that overlap or nest without giving FlowPeek lifecycle control:
+
+```bash
+export FLOWPEEK_SESSION_ID=$(flowpeek session-id)
+export FLOWPEEK_AGENT_NAME=Codex
+flowpeek run -- npm install
+flowpeek run -- npm run build
+flowpeek run -- npm test
+```
+
+If a wrapped command launches another `flowpeek run`, the child automatically inherits the session and records the current run as its parent. While commands are active, the dashboard groups concurrent roots and nested children at `/s/<session-id>`.
+
+This is metadata only. A FlowPeek session cannot start, stop, wait on, or restart commands. Finished runs disappear from the Dashboard and are removed from FlowPeek's metadata and log storage.
+
+## Probe and adapter learning
+
+`probe` samples a real, safe-to-repeat command without adding it to Dashboard or the live run store:
+
+```bash
+flowpeek probe --max-seconds 15 --max-bytes 2mb --max-lines 10000 -- my-tool build
+```
+
+The raw fixture is saved under `.flowpeek/fixtures/`. Probe stops the sampled process group at the first configured limit and returns success when the fixture was saved. It is not a sandbox or dry-run: do not probe commands with unacceptable side effects.
+
+After writing an adapter, run a strict fixture report:
+
+```bash
+flowpeek adapter test my-tool \
+  --fixture .flowpeek/fixtures/my-tool-<timestamp>.log \
+  --report
+```
+
+Report mode counts only events produced by the target adapter while processing the fixture. Generic fallback and lifecycle-only events cannot make a non-matching adapter pass.
 
 ## Architecture
 
@@ -80,7 +130,7 @@ real command (+ grandchildren in the same process group)
     │
     └── async side channel (Unix socket / named pipe)
             ▼
-        local collector  → SQLite metadata + append-only NDJSON
+        local collector  → transient metadata + live NDJSON
             ▼
         dashboard http://127.0.0.1:47831   (SSE live events)
 ```
@@ -102,16 +152,18 @@ Declarative YAML is preferred. Script adapters run in an isolated QuickJS runtim
 
 Adapters are parsers, not controllers. They never spawn the real task and never invent a percentage when the tool has no total.
 
-## Storage and privacy
+## Live storage and privacy
 
-All data stays under `~/.flowpeek/` (override with `FLOWPEEK_HOME`):
+While a command is running, transient data stays under `~/.flowpeek/` (override with `FLOWPEEK_HOME`):
 
-- `flowpeek.db` — run metadata
-- `runs/<run-id>.ndjson` — raw + structured events
+- `flowpeek.db` — active run metadata; the row is removed on exit
+- `runs/<run-id>.ndjson` — live raw + structured events; the file is removed on exit
 - `adapters/` — user adapters
 - `daemon.sock` / `daemon.pid`
 
-Defaults: retain 7 days, 2048 MB total, 256 MB per run. Hitting `max_run_mb` stops saving **raw history** for that run but live stream + structured events continue. Storage limits never kill a real task.
+The Dashboard has no Recent lane and does not expose completed sessions. `max_run_mb` defaults to 256 MB; hitting it stops spooling additional raw chunks for the active run, while the live stream and structured events continue. Storage limits never kill a real task.
+
+An upgrade does not automatically delete records produced by an older FlowPeek version. They are no longer exposed by the API or Dashboard.
 
 Nothing is uploaded. Command, cwd, logs, adapters, and metrics never leave the machine.
 
@@ -145,3 +197,7 @@ npm test
 ```
 
 Transparency tests cover wrapper exit codes, SIGTERM process-group forwarding, collector death isolation, adapter throw isolation, PTY `\r` chunks, and high-volume backpressure.
+
+## License
+
+FlowPeek is released under the [MIT License](LICENSE). Copyright © 2026 ZUENS2020.
