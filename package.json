@@ -1,6 +1,6 @@
 {
   "name": "flowpeek",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Transparent, AI-programmable observability layer for long-running coding-agent CLI processes.",
   "author": "ZUENS2020",
   "repository": {

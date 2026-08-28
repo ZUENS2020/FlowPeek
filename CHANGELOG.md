@@ -2,6 +2,13 @@
 
 All notable changes to FlowPeek are documented in this file.
 
+## 0.2.1 — 2026-08-28
+
+### Changed
+
+- FlowPeek's agent skill is now selected automatically for long-running and duration-uncertain CLI work, including installs, builds, tests, packaging, Docker, Cargo, ffmpeg, code generation, migrations, and data jobs.
+- The skill now explicitly excludes short read-only queries, interactive shells, commands already wrapped by FlowPeek, and commands where the user opts out.
+
 ## 0.2.0 — 2026-08-28
 
 ### Added

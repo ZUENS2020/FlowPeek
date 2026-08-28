@@ -1,17 +1,32 @@
 ---
 name: flowpeek
-description: Wrap long-running CLI commands in FlowPeek so humans can watch raw terminal output and structured progress on a local dashboard without taking control away from the coding agent.
+description: Default observability wrapper for non-interactive CLI commands likely to take more than a few seconds or produce sustained output. Use automatically for dependency installs, builds, type checks, test suites, packaging, Docker, ffmpeg, cargo, code generation, migrations, and data jobs. Do not use for short read-only queries, interactive shells, or commands already wrapped by FlowPeek.
 ---
 
 # FlowPeek skill
 
 FlowPeek is a transparent observability shell. You (the coding agent) still spawn, signal, wait on, and own the process. FlowPeek only captures telemetry and shows it at `http://127.0.0.1:47831`.
 
-## When to wrap
+## Default trigger policy
 
-Wrap a command with `flowpeek run -- …` when it is likely to run more than a few seconds: installs, compiles, test suites, docker/ffmpeg/cargo builds, large codegen, dataset jobs.
+Use FlowPeek automatically whenever you are about to run a non-interactive command that is likely to take more than a few seconds, produce sustained output, or have uncertain duration. The user does not need to mention FlowPeek.
 
-Do **not** wrap short queries (`ls`, `git status`, one-shot `cat`, trivial `node -e` probes).
+Always wrap:
+
+- Dependency installs and updates (`npm install`, `pnpm install`, `yarn install`, `pip install`, package-manager upgrades).
+- Builds, compiles, type checks, bundles, package verification, and release builds.
+- Test suites, integration tests, full linters, coverage, and benchmark runs.
+- Docker builds, Cargo work, ffmpeg jobs, large code generation, migrations, dataset processing, and other long scripts.
+- Any non-interactive command you would otherwise run in the background or wait on because its duration is uncertain.
+
+Do not wrap:
+
+- Short read-only queries (`ls`, `pwd`, `git status`, `rg`, one-shot `cat`, trivial `node -e` probes).
+- Interactive shells, REPLs, or TUIs that require ongoing direct interaction.
+- A command already starting with `flowpeek`; wrap only the outermost command and never recurse.
+- A command when the user explicitly asks not to use FlowPeek.
+
+If duration is genuinely uncertain, prefer wrapping once at the outermost level.
 
 ## How to wrap
 
