@@ -1,10 +1,11 @@
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 
 export const HELP = `FlowPeek — transparent observability for long-running agent CLI tasks.
 
 USAGE
   flowpeek run [options] -- <command> [args...]
   flowpeek probe [options] -- <command> [args...]
+  flowpeek tui [--session <id> | --run <id>] [options]
   flowpeek session-id
   flowpeek daemon [--foreground]
   flowpeek adapter list
@@ -17,7 +18,7 @@ USAGE
   flowpeek --version
 
 RUN OPTIONS
-  --label <text>                  Label shown on the dashboard
+  --label <text>                  Label shown in local viewers
   --adapter auto|none|<id>        Adapter selection (default: auto)
   --agent-output passthrough|compact
   --pty auto|always|never         Default: auto (prefer PTY)
@@ -36,10 +37,23 @@ PROBE OPTIONS
   --project <path>                Fixture project root
   --json                          Print a machine-readable capture report
 
+TUI OPTIONS
+  --session <id>                  Open one active session
+  --run <id>                      Open the active run and its session
+  --project <path>                Project root for collector config
+  --refresh-ms <n>                Refresh interval, 100–60000 (default: 750)
+  --no-color                      Disable ANSI color
+  --once                          Print one plain-text snapshot and exit
+
+TUI CONTROLS
+  Mouse                           Click sessions/runs/actions; wheel navigates
+  Keyboard fallback               ↑/↓ or j/k, Enter, Esc, r, q
+
 flowpeek run never starts, stops, or owns a background task. The caller
 retains lifecycle control. Telemetry is fail-open: collector/adapter/
-dashboard failure cannot stall or kill the real command. probe is an
+viewer failure cannot stall or kill the real command. probe is an
 explicit diagnostic command that runs and stops only its sampled child.
 
-Dashboard (loopback only): http://127.0.0.1:47831
+Web/TUI collector (loopback only): http://127.0.0.1:47831
+Idle collector shutdown: 60s by default (daemon.idle_seconds; 0 disables)
 `;

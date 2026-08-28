@@ -117,6 +117,43 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  if (cmd === "tui") {
+    const { runTui } = await import("./tui/index.js");
+    if (takeFlag(args, "--help") || takeFlag(args, "-h")) {
+      process.stdout.write(HELP);
+      return 0;
+    }
+    const valueOptions = ["--session", "--run", "--project", "--refresh-ms"];
+    const missing = valueOptions.find((name) => {
+      const index = args.indexOf(name);
+      return index >= 0 && (args[index + 1] == null || args[index + 1].startsWith("--"));
+    });
+    if (missing) {
+      process.stderr.write(`${missing} requires a value\n`);
+      return 2;
+    }
+    const sessionId = takeOpt(args, "--session");
+    const runId = takeOpt(args, "--run");
+    const project = takeOpt(args, "--project");
+    const refreshValue = takeOpt(args, "--refresh-ms");
+    const once = takeFlag(args, "--once");
+    const noColor = takeFlag(args, "--no-color");
+    if (args.length) {
+      process.stderr.write(`unknown tui option: ${args[0]}\n`);
+      return 2;
+    }
+    if (sessionId && runId) {
+      process.stderr.write("flowpeek tui accepts either --session or --run, not both\n");
+      return 2;
+    }
+    const refreshMs = refreshValue == null ? undefined : Number(refreshValue);
+    if (refreshMs != null && (!Number.isFinite(refreshMs) || refreshMs < 100 || refreshMs > 60_000)) {
+      process.stderr.write("--refresh-ms must be between 100 and 60000\n");
+      return 2;
+    }
+    return runTui({ sessionId, runId, project, refreshMs, once, noColor });
+  }
+
   if (cmd === "adapter") {
     const ad = await import("./adapters/cli.js");
     const sub = args[0];

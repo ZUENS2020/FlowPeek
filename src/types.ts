@@ -140,6 +140,10 @@ export interface ResolvedAdapter {
 }
 
 export interface AppConfig {
+  daemon: {
+    /** Stop this many seconds after the last active run. 0 disables. */
+    idle_seconds: number;
+  };
   dashboard: {
     host: string;
     port: number;

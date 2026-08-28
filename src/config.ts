@@ -10,6 +10,9 @@ import {
 } from "./paths.js";
 
 export const DEFAULT_CONFIG: AppConfig = {
+  daemon: {
+    idle_seconds: 60,
+  },
   dashboard: {
     host: DEFAULT_HOST,
     port: DEFAULT_PORT,
@@ -81,6 +84,10 @@ export function loadConfig(opts?: {
   }
   if (process.env.FLOWPEEK_HOST) {
     cfg.dashboard.host = process.env.FLOWPEEK_HOST;
+  }
+  if (process.env.FLOWPEEK_IDLE_SECONDS) {
+    const seconds = Number(process.env.FLOWPEEK_IDLE_SECONDS);
+    if (Number.isFinite(seconds) && seconds >= 0) cfg.daemon.idle_seconds = seconds;
   }
 
   if (opts?.cli?.host) cfg.dashboard.host = opts.cli.host;

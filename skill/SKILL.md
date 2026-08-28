@@ -5,7 +5,7 @@ description: Default observability wrapper for non-interactive CLI commands like
 
 # FlowPeek skill
 
-FlowPeek is a transparent observability shell. You (the coding agent) still spawn, signal, wait on, and own the process. FlowPeek only captures telemetry and shows it at `http://127.0.0.1:47831`.
+FlowPeek is a transparent observability wrapper. You (the coding agent) still spawn, signal, wait on, and own the process. Use it exactly as you would use the naked command; FlowPeek only captures telemetry.
 
 ## Default trigger policy
 
@@ -36,7 +36,7 @@ flowpeek run --label "frontend build" -- npm run build
 
 Useful flags:
 
-- `--agent-output compact` when output is huge (install logs, `cargo build -v`, ffmpeg). Dashboard still has the full raw log; you only see phase/progress/warning/error/heartbeat/completion.
+- `--agent-output compact` when output is huge (install logs, `cargo build -v`, ffmpeg). FlowPeek still captures the full raw log; you only receive phase/progress/warning/error/heartbeat/completion.
 - `--adapter auto` (default). Resolve first if you care: `flowpeek adapter resolve -- cargo build`.
 - `--pty auto` (default). Use `--no-pty` only if the tool misbehaves under a PTY.
 - `--json-meta` when you need the run id as JSON on stderr.
@@ -53,13 +53,7 @@ export FLOWPEEK_AGENT_NAME=Codex
 
 This is metadata only. It does not create or manage a task.
 
-On start, stderr prints:
-
-```
-[flowpeek] Live: http://127.0.0.1:47831/r/<run-id>
-```
-
-Tell the human that URL once. Do not poll the dashboard. Do not wait on HTTP. Your wait is the wrapper process, exactly as you would wait on the naked command.
+Do not poll FlowPeek or wait on its monitoring interfaces. Your wait is the wrapper process, exactly as you would wait on the naked command.
 
 The wrapper exit code **is** the real command exit code. Forward that to the user.
 
@@ -109,14 +103,14 @@ If adapter validation fails, run with `--adapter none` or generic. Never stop th
 - Do not probe commands that are destructive, costly, externally visible, or unsafe to repeat.
 - Do not fabricate totals or determinate percentages.
 - Do not treat “has output” as “has progress”.
-- Do not poll `http://127.0.0.1:47831`.
+- Do not poll FlowPeek's monitoring interfaces.
 - Do not kill/restart via FlowPeek — there are no such controls. Signal the wrapper as you would the child.
 - Do not replace Cursor/Codex/Claude Code background, wait, or notification systems. You still own the process.
 - Do not upload logs, cwd, adapters, or metrics anywhere. FlowPeek is local-only.
 
 ## Failure model (trust this)
 
-Collector, adapter, or dashboard death must not stop, pause, or stall the child. You still receive passthrough stdout (or compact summaries). If you see `telemetry connection lost` on the dashboard, that is **not** process failure.
+Collector, adapter, or viewer failure must not stop, pause, or stall the child. You still receive passthrough stdout (or compact summaries). A `telemetry connection lost` message is **not** process failure.
 
 ## Compact summaries you will see
 

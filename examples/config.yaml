@@ -1,5 +1,8 @@
 # FlowPeek local config (copy to ~/.flowpeek/config.yaml or .flowpeek/config.yaml)
 
+daemon:
+  # Stop after this many seconds with no active runs. 0 disables.
+  idle_seconds: 60
 dashboard:
   host: 127.0.0.1
   port: 47831

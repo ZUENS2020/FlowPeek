@@ -2,6 +2,18 @@
 
 All notable changes to FlowPeek are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Read-only `flowpeek tui` monitoring for active sessions, run trees, structured progress, and sanitized live output, with mouse-first navigation, keyboard fallback, and direct `--session` / `--run` entry points.
+- `flowpeek tui --once` for plain-text snapshots in scripts and non-interactive terminals.
+- The local collector now exits automatically 60 seconds after the last active run, even if an idle viewer remains open, and restarts on demand.
+
+### Fixed
+
+- CLI `--version` now matches the 0.2.1 package release.
+
 ## 0.2.1 — 2026-08-28
 
 ### Changed

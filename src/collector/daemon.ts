@@ -1,11 +1,12 @@
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { loadConfig } from "../config.js";
-import { ensureHome, daemonPidPath, dashboardUrl, isLoopback } from "../paths.js";
+import { ensureHome, daemonPidPath, daemonSockPath, dashboardUrl, isLoopback } from "../paths.js";
 import { getDb, purgeInterruptedRunRows } from "../storage/db.js";
 import { deleteRunLog } from "../storage/log-store.js";
 import { RunRegistry } from "./registry.js";
 import { startIpcServer } from "./ipc.js";
 import { startHttpServer } from "./http.js";
+import { IdleShutdownTracker } from "./idle.js";
 
 export async function startDaemon(opts: { foreground?: boolean; project?: string }): Promise<void> {
   const cfg = loadConfig({ project: opts.project });
@@ -21,9 +22,13 @@ export async function startDaemon(opts: { foreground?: boolean; project?: string
   const project = opts.project || process.cwd();
   const registry = new RunRegistry(cfg);
   const startedAt = Date.now();
+  const idleMs = Math.max(0, cfg.daemon.idle_seconds * 1000);
+  const activity = new IdleShutdownTracker(idleMs);
+  registry.on("update", () => activity.touch());
 
+  let ipc;
   try {
-    await startIpcServer(registry, project);
+    ipc = await startIpcServer(registry, project);
   } catch (err) {
     process.stderr.write(`ipc listen failed: ${err instanceof Error ? err.message : err}\n`);
     process.exit(1);
@@ -43,7 +48,17 @@ export async function startDaemon(opts: { foreground?: boolean; project?: string
 
   const stale = setInterval(() => registry.checkStale(), 3000);
   stale.unref?.();
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(stale);
+    clearInterval(idleCheck);
+    try {
+      ipc.close();
+    } catch {
+      /* ignore */
+    }
     try {
       http.close();
     } catch {
@@ -54,8 +69,19 @@ export async function startDaemon(opts: { foreground?: boolean; project?: string
     } catch {
       /* ignore */
     }
+    try {
+      if (process.platform !== "win32" && existsSync(daemonSockPath())) unlinkSync(daemonSockPath());
+    } catch {
+      /* ignore */
+    }
     process.exit(0);
   };
+  const idleCheck = setInterval(() => {
+    if (!activity.shouldStop(registry.list().length > 0)) return;
+    process.stderr.write(`[flowpeek] daemon idle for ${cfg.daemon.idle_seconds}s; stopping\n`);
+    shutdown();
+  }, Math.max(100, Math.min(1000, idleMs > 0 ? idleMs / 4 : 1000)));
+  idleCheck.unref?.();
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 

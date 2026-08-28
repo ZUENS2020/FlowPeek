@@ -196,7 +196,7 @@ function sseStream(
     }
   }, 15000);
   keep.unref?.();
-  req.on("close", () => {
+  req.once("close", () => {
     clearInterval(keep);
     unsub();
   });
